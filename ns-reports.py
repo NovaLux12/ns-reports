@@ -10,10 +10,10 @@ Nightscout stores SGV in mg/dL by default. This script converts to mmol/L
 
 Usage:
     python3 ns-reports.py [--url http://127.0.0.1:1337] [--days 7]
-    NS_ENV=/home/jack/nightscout/.env python3 ns-reports.py
+    NS_ENV=/path/to/nightscout.env python3 ns-reports.py
 
 Reads NS_URL from env (default http://127.0.0.1:1337) and NS_ENV for
-the Nightscout .env path (default /home/jack/nightscout/.env).
+the Nightscout .env path (e.g. /path/to/nightscout.env).
 """
 
 from __future__ import annotations
@@ -32,7 +32,10 @@ MGDL_TO_MMOL = 18.0
 
 
 def _env_path() -> str:
-    return os.environ.get("NS_ENV", "/home/jack/nightscout/.env")
+    path = os.environ.get("NS_ENV")
+    if not path:
+        raise RuntimeError("NS_ENV must point to your Nightscout .env file")
+    return path
 
 
 def api_hash() -> str:

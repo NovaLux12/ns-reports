@@ -15,7 +15,7 @@ Weekly Nightscout report generator. Fetches last 7 days of BG entries + treatmen
 python3 ns-reports.py [--url http://127.0.0.1:1337] [--days 7]
 ```
 
-Reads `NS_URL` from env (default `http://127.0.0.1:1337`) and `NS_ENV` for the Nightscout `.env` path (default `/home/jack/nightscout/.env`).
+Reads `NS_URL` from env (default `http://127.0.0.1:1337`) and `NS_ENV` for the path to your Nightscout `.env` file (e.g. `~/.nightscout.env`).
 
 ## Requirements
 
