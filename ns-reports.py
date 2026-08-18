@@ -90,13 +90,9 @@ def in_range(bg_mmol: float) -> bool:
     return 3.9 <= bg_mmol <= 10.0
 
 
-def daily_breakdown(entries: list[dict], days: int) -> list[dict]:
-    """Bucket SGV entries by UTC calendar day.
-
-    Returns one row per day that has >=1 reading, sorted ascending:
-    date, readings, avg_bg_mmol, tir_percent, lows (<3.9), highs (>10).
-    """
-    by_day: dict[dt.date, list[dict]] = {}
+def _bucket_sgv_entries(entries: list[dict]) -> dict[dt.date, list[float]]:
+    """Group SGV values by UTC calendar day."""
+    by_day: dict[dt.date, list[float]] = {}
     for e in entries:
         sgv = e.get("sgv")
         ms = e.get("date")
@@ -104,7 +100,11 @@ def daily_breakdown(entries: list[dict], days: int) -> list[dict]:
             continue
         day = dt.datetime.fromtimestamp(ms / 1000.0, tz=dt.timezone.utc).date()
         by_day.setdefault(day, []).append(sgv)
+    return by_day
 
+
+def _daily_rows_from_buckets(by_day: dict[dt.date, list[float]]) -> list[dict]:
+    """Convert bucketed SGV into the report row format."""
     rows: list[dict] = []
     for day in sorted(by_day):
         vals = [mmol(s) for s in by_day[day]]
@@ -120,32 +120,52 @@ def daily_breakdown(entries: list[dict], days: int) -> list[dict]:
     return rows
 
 
-def build_report(entries: list[dict], treatments: list[dict],
-                 days: int, now: dt.datetime | None = None) -> dict:
-    """Aggregate everything into the report dict (exact --json key set)."""
-    now = now or dt.datetime.now(dt.timezone.utc)
-    start = (now - dt.timedelta(days=days)).date()
+def daily_breakdown(entries: list[dict], days: int) -> list[dict]:
+    """Bucket SGV entries by UTC calendar day.
 
-    bgs_mmol = [mmol(e["sgv"]) for e in entries if e.get("sgv") is not None]
+    Returns one row per day that has >=1 reading, sorted ascending:
+    date, readings, avg_bg_mmol, tir_percent, lows (<3.9), highs (>10).
+    """
+    return _daily_rows_from_buckets(_bucket_sgv_entries(entries))
+
+
+def _bg_stats(bgs_mmol: list[float]) -> dict:
+    """Mean/std/TIR plus hypo/hyper counts for a window."""
     if bgs_mmol:
         avg = statistics.mean(bgs_mmol)
         std = statistics.pstdev(bgs_mmol)
         tir = sum(1 for b in bgs_mmol if in_range(b)) / len(bgs_mmol) * 100
     else:
         avg = std = tir = 0.0
+    return {
+        "avg": avg,
+        "std": std,
+        "tir": tir,
+        "lows": sum(1 for b in bgs_mmol if b < 3.9),
+        "highs": sum(1 for b in bgs_mmol if b > 10.0),
+    }
+
+
+def build_report(entries: list[dict], treatments: list[dict],
+                 days: int, now: dt.datetime | None = None) -> dict:
+    """Aggregate everything into the report dict (exact --json key set)."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    start = (now - dt.timedelta(days=days)).date()
+    bgs_mmol = [mmol(e["sgv"]) for e in entries if e.get("sgv") is not None]
+    stats = _bg_stats(bgs_mmol)
 
     return {
         "window_days": days,
         "start_date": start.isoformat(),
         "end_date": now.date().isoformat(),
         "readings": len(bgs_mmol),
-        "avg_bg_mmol": round(avg, 1),
-        "std_dev_mmol": round(std, 1),
-        "gmi_percent": gmi(avg * MGDL_TO_MMOL),
-        "cv_percent": round(cv(avg, std)),
-        "time_in_range_percent": round(tir),
-        "lows": sum(1 for b in bgs_mmol if b < 3.9),
-        "highs": sum(1 for b in bgs_mmol if b > 10.0),
+        "avg_bg_mmol": round(stats["avg"], 1),
+        "std_dev_mmol": round(stats["std"], 1),
+        "gmi_percent": gmi(stats["avg"] * MGDL_TO_MMOL),
+        "cv_percent": round(cv(stats["avg"], stats["std"])),
+        "time_in_range_percent": round(stats["tir"]),
+        "lows": stats["lows"],
+        "highs": stats["highs"],
         "basal_units": float(round(basal_total(treatments), 1)),
         "bolus_units": float(round(bolus_total(treatments), 1)),
         "daily": daily_breakdown(entries, days),
@@ -227,6 +247,55 @@ def fmt_bg(bg_mmol: float) -> str:
 # CLI
 # ---------------------------------------------------------------------------
 
+def _extract_bgs(entries: list[dict]) -> list[float]:
+    """SGV readings as mmol/L, skipping entries without sgv."""
+    return [mmol(e["sgv"]) for e in entries if e.get("sgv") is not None]
+
+
+def _render_extremes(bgs_mmol: list[float]) -> list[str]:
+    """Lowest/highest reading blocks for the text report."""
+    lows = sorted(b for b in bgs_mmol if b < 3.9)
+    highs = sorted((b for b in bgs_mmol if b > 10.0), reverse=True)
+    lines: list[str] = []
+    if lows:
+        lines.append("")
+        lines.append("  Lowest 5 readings:")
+        for b in lows[:5]:
+            lines.append(f"    {fmt_bg(b)}")
+    if highs:
+        lines.append("")
+        lines.append("  Highest 5 readings:")
+        for b in highs[:5]:
+            lines.append(f"    {fmt_bg(b)}")
+    return lines
+
+
+def _render_text_report(report: dict, treatments: list[dict], bgs_mmol: list[float]) -> str:
+    """Format the text report body (header, totals, extremes, daily table)."""
+    basal_note = ""
+    if not any(t.get("eventType") in BASAL_TYPES for t in treatments):
+        basal_note = " (no basal entries in window)"
+
+    lines = [
+        f"Nightscout report: {report['start_date']} → today ({report['window_days']} days)",
+        f"  Readings: {report['readings']}",
+        f"  Average:  {report['avg_bg_mmol']:.1f} mmol/L",
+        f"  GMI: {report['gmi_percent']}%",
+        f"  Std dev:  {report['std_dev_mmol']:.1f} mmol/L",
+        f"  CV: {report['cv_percent']}%",
+        f"  Time in range: {report['time_in_range_percent']}%",
+        f"  Lows (<3.9): {report['lows']}",
+        f"  Highs (>10): {report['highs']}",
+        f"  Total basal: {report['basal_units']:.1f} U{basal_note}",
+        f"  Total bolus: {report['bolus_units']:.1f} U",
+    ]
+    lines.extend(_render_extremes(bgs_mmol))
+    lines.append("")
+    if report["daily"]:
+        lines.extend(render_daily_table(report["daily"]))
+    return "\n".join(lines)
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description="Weekly Nightscout report")
     p.add_argument("--url", help="Nightscout base URL (default: NS_URL env or http://127.0.0.1:1337)")
@@ -237,55 +306,23 @@ def main() -> int:
     base = (args.url or os.environ.get("NS_URL") or "http://127.0.0.1:1337").rstrip("/")
 
     entries = fetch_entries(base, args.days)
-    treatments = fetch_treatments(base, args.days)
+    if not entries:
+        print("No entries found.")
+        return 0
 
+    treatments = fetch_treatments(base, args.days)
     report = build_report(entries, treatments, args.days)
 
     if args.json:
         print(json.dumps(report))
         return 0
 
-    if not entries:
-        print("No entries found.")
-        return 0
-
-    bgs_mmol = [mmol(e["sgv"]) for e in entries if e.get("sgv") is not None]
+    bgs_mmol = _extract_bgs(entries)
     if not bgs_mmol:
         print("No SGV values found.")
         return 0
 
-    lows = sorted(b for b in bgs_mmol if b < 3.9)
-    highs = sorted((b for b in bgs_mmol if b > 10.0), reverse=True)
-
-    basal_note = ""
-    if not any(t.get("eventType") in BASAL_TYPES for t in treatments):
-        basal_note = " (no basal entries in window)"
-
-    print(f"Nightscout report: {report['start_date']} → today ({args.days} days)")
-    print(f"  Readings: {report['readings']}")
-    print(f"  Average:  {report['avg_bg_mmol']:.1f} mmol/L")
-    print(f"  GMI: {report['gmi_percent']}%")
-    print(f"  Std dev:  {report['std_dev_mmol']:.1f} mmol/L")
-    print(f"  CV: {report['cv_percent']}%")
-    print(f"  Time in range: {report['time_in_range_percent']}%")
-    print(f"  Lows (<3.9): {report['lows']}")
-    print(f"  Highs (>10): {report['highs']}")
-    print(f"  Total basal: {report['basal_units']:.1f} U{basal_note}")
-    print(f"  Total bolus: {report['bolus_units']:.1f} U")
-
-    if lows:
-        print(f"\n  Lowest 5 readings:")
-        for b in lows[:5]:
-            print(f"    {fmt_bg(b)}")
-    if highs:
-        print(f"\n  Highest 5 readings:")
-        for b in highs[:5]:
-            print(f"    {fmt_bg(b)}")
-
-    print("\nDaily breakdown")
-    for line in render_daily_table(report["daily"]):
-        print(line)
-
+    print(_render_text_report(report, treatments, bgs_mmol))
     return 0
 
 
