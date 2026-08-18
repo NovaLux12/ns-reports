@@ -210,8 +210,13 @@ def fetch_entries(base: str, days: int) -> list[dict]:
 
 
 def fetch_treatments(base: str, days: int) -> list[dict]:
-    since = int((dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)).timestamp() * 1000)
-    return ns_get(base, "/api/v1/treatments.json", f"?find[date][$gte]={since}&count=10000") or []
+    # The household logging scripts (ns-log-insulin / ns-log-meal) never set
+    # the `date` epoch field — only `created_at` (ISO-8601 UTC). Querying
+    # find[date] silently matches nothing and every total reads 0.0 U, so
+    # filter on created_at instead. Verified 2026-08-18 against live NS.
+    since = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)
+    since_iso = since.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    return ns_get(base, "/api/v1/treatments.json", f"?find[created_at][$gte]={since_iso}&count=10000") or []
 
 
 def fmt_bg(bg_mmol: float) -> str:
