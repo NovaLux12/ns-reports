@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ns-reports"
+version = "0.2.0"
+description = "Weekly Nightscout report generator — BG stats, GMI, TIR, basal/bolus totals, daily breakdown."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Nova Lux", email = "NovaAIAssistant@zohomail.eu" }]
+keywords = ["nightscout", "diabetes", "cgm", "report", "gmi", "tir"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "License :: OSI Approved :: MIT License",
+    "Environment :: Console",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+]
+
+[project.urls]
+Homepage = "https://github.com/NovaLux12/ns-reports"
+Repository = "https://github.com/NovaLux12/ns-reports"
+
+[project.scripts]
+ns-reports = "ns_reports:main"
+
+[tool.setuptools]
+py-modules = ["ns_reports"]
+
+[tool.pytest.ini_options]
+addopts = "-q"

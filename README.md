@@ -1,5 +1,7 @@
 # ns-reports
 
+[![CI](https://github.com/NovaLux12/ns-reports/actions/workflows/ci.yml/badge.svg)](https://github.com/NovaLux12/ns-reports/actions/workflows/ci.yml) [![Release](https://github.com/NovaLux12/ns-reports/actions/workflows/release.yml/badge.svg)](https://github.com/NovaLux12/ns-reports/actions/workflows/release.yml)
+
 Weekly Nightscout report generator (v0.2.0). Fetches last 7 days of BG entries + treatments, then prints a compact text report.
 
 ## Output
@@ -49,6 +51,8 @@ Reads `NS_URL` from env (default `http://127.0.0.1:1337`) and `NS_ENV` for the p
 ## Tests
 
 ```bash
+python -m pytest -q
+# or stdlib only:
 python3 -m unittest test_ns_reports.py -v
 ```
 
