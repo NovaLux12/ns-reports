@@ -120,13 +120,29 @@ def _daily_rows_from_buckets(by_day: dict[dt.date, list[float]]) -> list[dict]:
     return rows
 
 
-def daily_breakdown(entries: list[dict], days: int) -> list[dict]:
-    """Bucket SGV entries by UTC calendar day.
+def daily_breakdown(entries: list[dict], days: int,
+                     now: dt.datetime | dt.date | None = None) -> list[dict]:
+    """Bucket SGV entries by UTC calendar day, clamped to the report window.
 
-    Returns one row per day that has >=1 reading, sorted ascending:
+    Returns one row per in-window day that has >=1 reading, sorted ascending:
     date, readings, avg_bg_mmol, tir_percent, lows (<3.9), highs (>10).
+    The window is [start, end] with end = now's UTC date (a plain date is
+    used as-is) and start = end - days, matching build_report's
+    start_date/end_date. When now is omitted the window anchors at the
+    latest entry day, so ad-hoc calls over fixed data still honor days.
     """
-    return _daily_rows_from_buckets(_bucket_sgv_entries(entries))
+    by_day = _bucket_sgv_entries(entries)
+    if not by_day:
+        return []
+    if now is None:
+        end = max(by_day)
+    elif isinstance(now, dt.datetime):
+        end = now.date()
+    else:
+        end = now
+    start = end - dt.timedelta(days=days)
+    windowed = {day: vals for day, vals in by_day.items() if start <= day <= end}
+    return _daily_rows_from_buckets(windowed)
 
 
 def _bg_stats(bgs_mmol: list[float]) -> dict:
@@ -168,7 +184,7 @@ def build_report(entries: list[dict], treatments: list[dict],
         "highs": stats["highs"],
         "basal_units": float(round(basal_total(treatments), 1)),
         "bolus_units": float(round(bolus_total(treatments), 1)),
-        "daily": daily_breakdown(entries, days),
+        "daily": daily_breakdown(entries, days, now=now),
     }
 
 
