@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/NovaLux12/ns-reports/actions/workflows/ci.yml/badge.svg)](https://github.com/NovaLux12/ns-reports/actions/workflows/ci.yml) [![Release](https://github.com/NovaLux12/ns-reports/actions/workflows/release.yml/badge.svg)](https://github.com/NovaLux12/ns-reports/actions/workflows/release.yml) [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/) [![Python 3.11-3.13](https://img.shields.io/badge/tested-3.11%E2%80%933.13-green)](https://github.com/NovaLux12/ns-reports/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+> **Part of [Loopwise Health](https://loopwise.uk)** — open diabetes infrastructure (CareLink bridge, Nightscout MCP, reporting toolkit) plus a Claude-powered layer for briefs, reports, and triage.
+
 Weekly Nightscout report generator (v0.2.0). Fetches last 7 days of BG entries + treatments, then prints a compact text report. Zero dependencies — Python stdlib only.
 
 ## Install
@@ -90,3 +92,6 @@ Stdlib only — `pytest` and `build` are the only dev extras (CI installs `pytes
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+---
+*Part of [Loopwise Health](https://loopwise.uk) — research and educational tooling only. Not a medical device, not FDA approved, does not recommend insulin doses. Not affiliated with or endorsed by Medtronic.*
