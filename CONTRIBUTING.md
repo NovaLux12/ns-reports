@@ -23,10 +23,9 @@ changes the install story for every user and is a decision, not a detail.
 5. Open a PR against `main`.
 6. Wait for review.
 
-CI runs the shared Python workflow on **3.11, 3.12 and 3.13**. Note the gap:
-`pyproject.toml` declares `requires-python = ">=3.9"`, but no CI job exercises
-3.9 or 3.10. If you touch anything version-sensitive, say which versions you
-tested in the PR description.
+CI runs the shared Python workflow on **3.9 through 3.13**, matching the
+`requires-python = ">=3.9"` floor in `pyproject.toml`. If you touch anything
+version-sensitive, say which versions you tested in the PR description.
 
 ## Ground rules
 
