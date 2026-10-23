@@ -3,6 +3,15 @@ name: release
 on:
   push:
     tags: ['v*.*.*']
+  # A tag pushed before this workflow existed gets no release at all.
+  # This lets a maintainer cut the missing release for an existing tag
+  # instead of leaving the tag release-less.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing v-prefixed tag to cut a release for (must already exist)'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -14,15 +23,76 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      # The release body is the CHANGELOG entry for this tag, so the notes
+      # shipped with a release and the changelog cannot drift apart.
+      #
+      # CHANGELOG.md is read from the tag when the tag has it, and from the
+      # default branch when it does not — a tag cut before CHANGELOG.md
+      # existed still gets its notes.
+      - name: Extract the CHANGELOG entry for this tag
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.tag || github.ref_name }}"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "invalid release tag: $tag" >&2
+            exit 1
+          fi
+          if ! git rev-parse "$tag" >/dev/null 2>&1; then
+            echo "tag does not exist: $tag" >&2
+            exit 1
+          fi
+          if git cat-file -e "$tag:CHANGELOG.md" 2>/dev/null; then
+            source_ref="$tag"
+          else
+            source_ref="origin/main"
+            echo "note: $tag predates CHANGELOG.md — reading notes from $source_ref"
+          fi
+          git show "$source_ref:CHANGELOG.md" > /tmp/CHANGELOG.md
+          python3 - "$tag" <<'PY' > /tmp/release-body.md
+          import re, sys
+          tag = sys.argv[1]
+          text = open("/tmp/CHANGELOG.md", encoding="utf-8").read()
+          # Section headings look like "## v0.2.0 — 2026-08-18".
+          m = re.search(rf"^## {re.escape(tag)}\b.*$", text, re.M)
+          if not m:
+              sys.exit(f"CHANGELOG.md has no section for {tag}")
+          rest = text[m.end():]
+          nxt = re.search(r"^## ", rest, re.M)
+          body = (m.group(0) + "\n" + (rest[:nxt.start()] if nxt else rest)).rstrip()
+          print(body)
+          PY
+          echo "extracted $(wc -l < /tmp/release-body.md) lines of release notes for $tag"
+
+      # Not every tag is a package. v0.2.0 predates pyproject.toml, so
+      # there is nothing to build for it — it ships as source, with the
+      # tag's auto-generated source archives.
+      - name: Check whether this tag is a buildable package
+        id: buildable
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.tag || github.ref_name }}"
+          if git cat-file -e "$tag:pyproject.toml" 2>/dev/null || git cat-file -e "$tag:setup.py" 2>/dev/null; then
+            echo "buildable=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "buildable=false" >> "$GITHUB_OUTPUT"
+            echo "note: $tag has no packaging metadata — release will have no binary assets"
+          fi
+
       - name: Build sdist and wheel
+        if: steps.buildable.outputs.buildable == 'true'
         run: |
           pip install build
           python -m build
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          name: ${{ inputs.tag || github.ref_name }}
+          body_path: /tmp/release-body.md
           files: dist/*
-          generate_release_notes: true
