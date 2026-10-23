@@ -46,10 +46,21 @@ jobs:
             echo "tag does not exist: $tag" >&2
             exit 1
           fi
-          if git cat-file -e "$tag:CHANGELOG.md" 2>/dev/null; then
-            source_ref="$tag"
-          else
-            source_ref="origin/main"
+          # Prefer the tag's own changelog. A tag cut before CHANGELOG.md
+          # existed falls back to the checked-out ref (the branch running this
+          # workflow, which by then has the changelog), then to main.
+          source_ref=""
+          for candidate in "$tag" HEAD origin/main; do
+            if git cat-file -e "$candidate:CHANGELOG.md" 2>/dev/null; then
+              source_ref="$candidate"
+              break
+            fi
+          done
+          if [[ -z "$source_ref" ]]; then
+            echo "no CHANGELOG.md found at $tag, HEAD or origin/main" >&2
+            exit 1
+          fi
+          if [[ "$source_ref" != "$tag" ]]; then
             echo "note: $tag predates CHANGELOG.md — reading notes from $source_ref"
           fi
           git show "$source_ref:CHANGELOG.md" > /tmp/CHANGELOG.md
@@ -95,4 +106,4 @@ jobs:
           tag_name: ${{ inputs.tag || github.ref_name }}
           name: ${{ inputs.tag || github.ref_name }}
           body_path: /tmp/release-body.md
-          files: dist/*
+          files: ${{ steps.buildable.outputs.buildable == 'true' && 'dist/*' || '' }}
